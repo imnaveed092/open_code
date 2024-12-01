@@ -1,68 +1,29 @@
-from openpyxl import load_workbook
+import pandas as pd
 
-def handle_spilled_data(file_path, sheet_name):
-    """
-    Handles spilled data by appending it to the correct row and deleting the spilled rows.
-    Optimized for large datasets and high column counts.
-    """
-    try:
-        # Load workbook and sheet
-        workbook = load_workbook(file_path)
-        sheet = workbook[sheet_name]
+def process_large_excel(file_path, output_path):
+    df = pd.read_excel(file_path, sheet_name="Sheet1", engine="openpyxl")
 
-        max_row = sheet.max_row
+    # Process DataFrame: handle spills and concatenate data
+    for index, row in df.iterrows():
+        if index + 2 < len(df):
+            next_row_empty = df.iloc[index + 1].isna().all()
+            next_next_row_data = not df.iloc[index + 2].isna().all()
 
-        # Detect the last relevant column dynamically (once)
-        max_column = 0
-        for row in sheet.iter_rows(min_row=1, max_row=max_row):
-            max_column = max(
-                max((cell.column for cell in row if cell.value is not None), default=1),
-                max_column
-            )
+            if next_row_empty and next_next_row_data:
+                spilled_data = df.iloc[index + 2].dropna().astype(str).tolist()
+                concatenated_data = " ".join(spilled_data)
 
-        rows_to_delete = set()  # Set to track rows for deletion
+                # Append spilled data to the first empty column in the original row
+                for col in df.columns:
+                    if pd.isna(row[col]):
+                        df.at[index, col] = concatenated_data
+                        break
 
-        for row_idx in range(1, max_row):  # Iterate up to max_row - 1 to avoid out-of-bounds error
-            if row_idx in rows_to_delete:  # Skip rows already marked for deletion
-                continue
+                # Remove the spilled row
+                df.drop(index + 2, inplace=True)
 
-            current_row = sheet[row_idx]
-            if row_idx + 1 > max_row:  # Ensure next row exists
-                break
-            next_row = sheet[row_idx + 1]
-
-            # Check for valid current row and spilled data in next row
-            if next_row:
-                if all(cell.value is None for cell in next_row[:max_column]):  # Skip empty rows
-                    continue
-                
-                # Spilled data detected
-                spilled_row = next_row
-
-                # Locate the last non-empty column in the current row
-                last_non_empty_col = max(
-                    (col_idx for col_idx, cell in enumerate(current_row, start=1) if cell.value is not None),
-                    default=1
-                )
-
-                # Append spilled data to the current row
-                for col_idx, cell in enumerate(spilled_row, start=last_non_empty_col + 1):
-                    if col_idx - 1 < max_column:  # Ensure column index is within bounds
-                        current_row[col_idx - 1].value = cell.value
-
-                # Mark the spilled row for deletion
-                rows_to_delete.add(row_idx + 1)
-
-        # Delete rows in reverse order to avoid index shifting
-        for row_idx in sorted(rows_to_delete, reverse=True):
-            sheet.delete_rows(row_idx)
-
-        # Save the workbook
-        workbook.save(file_path)
-        print(f"Processed {max_row} rows successfully. Spilled rows merged and deleted.")
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    # Save processed DataFrame back to Excel
+    df.to_excel(output_path, index=False)
 
 # Example usage
-handle_spilled_data("your_file_path.xlsx", "Sheet1")
+process_large_excel("./New Microsoft Excel Worksheet.xlsx", "./Processed_Output.xlsx")
