@@ -14,7 +14,7 @@ def handle_spilled_data(file_path, sheet_name):
 
         # Detect the last relevant column dynamically (once)
         max_column = 0
-        for row in sheet.iter_rows(max_row=max_row):
+        for row in sheet.iter_rows(min_row=1, max_row=max_row):
             max_column = max(
                 max((cell.column for cell in row if cell.value is not None), default=1),
                 max_column
@@ -22,12 +22,14 @@ def handle_spilled_data(file_path, sheet_name):
 
         rows_to_delete = set()  # Set to track rows for deletion
 
-        for row_idx in range(1, max_row):
+        for row_idx in range(1, max_row):  # Iterate up to max_row - 1 to avoid out-of-bounds error
             if row_idx in rows_to_delete:  # Skip rows already marked for deletion
                 continue
 
             current_row = sheet[row_idx]
-            next_row = sheet[row_idx + 1] if row_idx + 1 <= max_row else None
+            if row_idx + 1 > max_row:  # Ensure next row exists
+                break
+            next_row = sheet[row_idx + 1]
 
             # Check for valid current row and spilled data in next row
             if next_row:
@@ -45,7 +47,8 @@ def handle_spilled_data(file_path, sheet_name):
 
                 # Append spilled data to the current row
                 for col_idx, cell in enumerate(spilled_row, start=last_non_empty_col + 1):
-                    current_row[col_idx - 1].value = cell.value
+                    if col_idx - 1 < max_column:  # Ensure column index is within bounds
+                        current_row[col_idx - 1].value = cell.value
 
                 # Mark the spilled row for deletion
                 rows_to_delete.add(row_idx + 1)
@@ -60,3 +63,6 @@ def handle_spilled_data(file_path, sheet_name):
 
     except Exception as e:
         print(f"An error occurred: {e}")
+
+# Example usage
+handle_spilled_data("your_file_path.xlsx", "Sheet1")
